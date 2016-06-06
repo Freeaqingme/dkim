@@ -9,6 +9,33 @@ import (
 	"time"
 )
 
+var (
+	minRequired = []string{
+		VersionKey,
+		AlgorithmKey,
+		DomainKey,
+		SelectorKey,
+		CanonicalizationKey,
+		QueryMethodKey,
+		TimestampKey,
+	}
+	keyOrder = []string{
+		VersionKey,
+		AlgorithmKey,
+		CanonicalizationKey,
+		DomainKey,
+		QueryMethodKey,
+		SelectorKey,
+		TimestampKey,
+		BodyHashKey,
+		FieldsKey,
+		CopiedFieldsKey,
+		AUIDKey,
+		BodyLengthKey,
+		SignatureDataKey,
+	}
+)
+
 type Conf map[string]string
 
 const (
@@ -29,7 +56,10 @@ const (
 )
 
 const (
-	AlgorithmSHA256 = "rsa-sha256"
+	AlgorithmSHA256         = "rsa-sha256"
+	DefaultVersion          = "1"
+	DefaultCanonicalization = "relaxed/simple"
+	DefaultQueryMethod      = "dns/txt"
 )
 
 func NewConf(domain string, selector string) (Conf, error) {
@@ -40,40 +70,31 @@ func NewConf(domain string, selector string) (Conf, error) {
 		return nil, fmt.Errorf("selector invalid")
 	}
 	return Conf{
-		VersionKey:          "1",
+		VersionKey:          DefaultVersion,
 		AlgorithmKey:        AlgorithmSHA256,
 		DomainKey:           domain,
 		SelectorKey:         selector,
-		CanonicalizationKey: "relaxed/simple",
-		QueryMethodKey:      "dns/txt",
+		CanonicalizationKey: DefaultCanonicalization,
+		QueryMethodKey:      DefaultQueryMethod,
 		TimestampKey:        strconv.FormatInt(time.Now().Unix(), 10),
-		FieldsKey:           "",
-		BodyHashKey:         "",
-		SignatureDataKey:    "",
+		FieldsKey:           Empty,
+		BodyHashKey:         Empty,
+		SignatureDataKey:    Empty,
 	}, nil
 }
 
 func (c Conf) Validate() error {
-	minRequired := []string{
-		VersionKey,
-		AlgorithmKey,
-		DomainKey,
-		SelectorKey,
-		CanonicalizationKey,
-		QueryMethodKey,
-		TimestampKey,
-	}
-	for _, v := range minRequired {
-		if _, ok := c[v]; !ok {
-			return fmt.Errorf("key '%s' missing", v)
+	for _, key := range minRequired {
+		if _, ok := c[key]; !ok {
+			return fmt.Errorf("key '%s' missing", key)
 		}
 	}
 	return nil
 }
 
 func (c Conf) Algorithm() string {
-	if a := c[AlgorithmKey]; a != "" {
-		return a
+	if algorithm := c[AlgorithmKey]; algorithm != Empty {
+		return algorithm
 	}
 	return AlgorithmSHA256
 }
@@ -86,42 +107,24 @@ func (c Conf) Hash() crypto.Hash {
 }
 
 func (c Conf) RelaxedHeader() bool {
-	can := strings.ToLower(c[CanonicalizationKey])
-	if strings.HasPrefix(can, "relaxed") {
+	if strings.HasPrefix(strings.ToLower(c[CanonicalizationKey]), "relaxed") {
 		return true
 	}
 	return false
 }
 
 func (c Conf) RelaxedBody() bool {
-	can := strings.ToLower(c[CanonicalizationKey])
-	if strings.HasSuffix(can, "/relaxed") {
+	if strings.HasSuffix(strings.ToLower(c[CanonicalizationKey]), "/relaxed") {
 		return true
 	}
 	return false
 }
 
 func (c Conf) String() string {
-	keyOrder := []string{
-		VersionKey,
-		AlgorithmKey,
-		CanonicalizationKey,
-		DomainKey,
-		QueryMethodKey,
-		SelectorKey,
-		TimestampKey,
-		BodyHashKey,
-		FieldsKey,
-		CopiedFieldsKey,
-		AUIDKey,
-		BodyLengthKey,
-		SignatureDataKey,
-	}
 	pairs := make([]string, 0, len(keyOrder))
-	for _, k := range keyOrder {
-		v, ok := c[k]
-		if ok {
-			pairs = append(pairs, k+"="+v)
+	for _, key := range keyOrder {
+		if value, ok := c[key]; ok {
+			pairs = append(pairs, fmt.Sprintf("%s=%s", key, value))
 		}
 	}
 	return strings.Join(pairs, "; ")
