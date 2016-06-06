@@ -24,15 +24,11 @@ const (
 var (
 	CRLF_AS_BYTE  = []byte{'\r', '\n'}
 	WSP_AS_BYTE   = []byte{' '}
-	EMPTY_AS_BYTE = []byte{}
-	EMPTY_SIGN_AS_BYTE = []byte("")
 )
 
 var (
-	headerRelaxRx    = regexp.MustCompile(`\s+`)
-	singleWspRx      = regexp.MustCompile(`[ \t]+`)
-	wspEndLineRx     = regexp.MustCompile(`\s?(\r\n|\n)`)
-	ignoreEmptyLines = regexp.MustCompile(`[ \r\n]*\z`)
+	headerRelaxRx = regexp.MustCompile(`\s+`)
+	singleWspRx   = regexp.MustCompile(`[ \t]+`)
 )
 
 const (
@@ -82,6 +78,11 @@ func NewByKey(conf Conf, key *rsa.PrivateKey) *DKIM {
 	return dkim
 }
 
+var (
+	rxWsCompress = regexp.MustCompile(`[ \t]+`)
+	rxWsCRLF     = regexp.MustCompile(` \r\n`)
+)
+
 func (d *DKIM) canonicalBody(msg *mail.Message) []byte {
 	body := d.msgBody
 	if d.conf.RelaxedBody() {
@@ -90,11 +91,12 @@ func (d *DKIM) canonicalBody(msg *mail.Message) []byte {
 		}
 		// Reduce WSP sequences to single WSP
 		body = singleWspRx.ReplaceAll(body, WSP_AS_BYTE)
+		body = rxWsCompress.ReplaceAll(body, []byte(" "))
 
 		// Ignore all whitespace at end of lines.
 		// Implementations MUST NOT remove the CRLF
 		// at the end of the line
-		body = wspEndLineRx.ReplaceAll(body, CRLF_AS_BYTE)
+		body = rxWsCRLF.ReplaceAll(body, []byte("\r\n"))
 	} else {
 		if len(body) == 0 {
 			return CRLF_AS_BYTE
@@ -102,7 +104,12 @@ func (d *DKIM) canonicalBody(msg *mail.Message) []byte {
 	}
 
 	// Ignore all empty lines at the end of the message body
-	body = ignoreEmptyLines.ReplaceAll(body, EMPTY_AS_BYTE)
+	for i := len(body) - 1; i >= 0; i-- {
+		if body[i] != '\r' && body[i] != '\n' && body[i] != ' ' {
+			body = body[:i+1]
+			break
+		}
+	}
 
 	return append(body, CRLF_AS_BYTE...)
 }
@@ -164,12 +171,6 @@ func (d *DKIM) signature(msg *mail.Message) (string, error) {
 
 func (d *DKIM) Sign(eml []byte) ([]byte, error) {
 	msg, err := readEML(eml)
-//	body := new(bytes.Buffer)
-//	body.ReadFrom(msg.Body)
-//	d.msgBody = body.Bytes()
-//
-//	// Replace the Reader
-//	msg.Body = body
 
 	if err != nil {
 		return eml, err
